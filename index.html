@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>HoopsHype Overpaid / Underpaid Dashboard</title>
+  <title>HoopsHype Overpaid / Underpaid</title>
   <style>
-    :root{--bg:#ffffff;--fg:#111111;--muted:#666;--accent:#0d6efd;--line:#e5e7eb;}
+    :root{--bg:#ffffff;--fg:#111;--muted:#666;--line:#e5e7eb;--head:#fafafa;--accent:#0d6efd}
     *{box-sizing:border-box}
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif}
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
@@ -13,24 +13,15 @@
     .controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:end;margin:12px 0 14px}
     .controls label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
     select,input{width:100%;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--fg)}
-    .pillbar{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 10px}
-    .pill{padding:6px 10px;border:1px solid var(--line);border-radius:999px;font-size:12px;cursor:pointer;user-select:none}
-    .pill.active{border-color:var(--accent);color:var(--accent)}
+    .row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:6px 0 14px}
+    .summary{font-size:13px;color:var(--muted)}
     table{width:100%;border-collapse:collapse}
-    thead th{position:sticky;top:0;background:#fafafa;border-bottom:1px solid var(--line);font-size:12px;text-align:left;padding:10px}
+    thead th{position:sticky;top:0;background:var(--head);border-bottom:1px solid var(--line);font-size:12px;text-align:left;padding:10px;cursor:pointer}
     tbody td{border-bottom:1px solid var(--line);padding:10px;vertical-align:middle}
     tbody tr:hover{background:#f9fafb}
     .right{text-align:right}
     .nowrap{white-space:nowrap}
-    .status{font-weight:600}
-    .u{color:#0a7c2d} .o{color:#b91c1c}
-    .row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:6px 0 14px}
-    .summary{font-size:13px;color:var(--muted)}
-    .btn{appearance:none;border:1px solid var(--line);border-radius:10px;background:#fff;padding:8px 10px;cursor:pointer}
-    .btn:disabled{opacity:.5;cursor:not-allowed}
-    .help{font-size:12px;color:var(--muted);}
-    .link{color:var(--accent);text-decoration:none}
-    .link:hover{text-decoration:underline}
+    .totals{font-weight:700;background:#f3f4f6}
     @media (max-width:860px){
       .controls{grid-template-columns:repeat(2,minmax(0,1fr));}
       .nowrap{white-space:normal}
@@ -39,8 +30,7 @@
 </head>
 <body>
   <div class="wrap">
-    <h1>Overpaid / Underpaid (1990‑91 to 2024‑25)</h1>
-    <div class="help">Filter by season range, team, or player. Click a player or team to open the HoopsHype page.</div>
+    <h1>Overpaid / Underpaid (1990-91 to 2024-25)</h1>
     <div class="controls">
       <div>
         <label for="fromSeason">From season</label>
@@ -56,7 +46,7 @@
       </div>
       <div>
         <label for="player">Player</label>
-        <input id="player" type="text" placeholder="Type to search…" />
+        <input id="player" type="text" placeholder="Type player name…" />
       </div>
       <div>
         <label for="minGames">Min games</label>
@@ -70,36 +60,16 @@
       </div>
       <div>
         <label>&nbsp;</label>
-        <button id="reset" class="btn">Reset</button>
+        <button id="reset" style="padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer">Reset</button>
       </div>
-    </div>
-
-    <div class="pillbar">
-      <div class="pill active" data-status="">All</div>
-      <div class="pill" data-status="U">Underpaid</div>
-      <div class="pill" data-status="O">Overpaid</div>
     </div>
 
     <div class="row">
       <div class="summary" id="summary">Loading…</div>
-      <div>
-        <button id="download" class="btn">Download current view (CSV)</button>
-      </div>
     </div>
 
     <table id="tbl">
-      <thead>
-        <tr>
-          <th data-sort="season" class="nowrap">Season</th>
-          <th data-sort="player">Player</th>
-          <th data-sort="team">Team</th>
-          <th data-sort="salary" class="right">Salary</th>
-          <th data-sort="real_value" class="right">Real&nbsp;Value</th>
-          <th data-sort="difference" class="right">Difference</th>
-          <th data-sort="games" class="right">G</th>
-          <th data-sort="status">U/O</th>
-        </tr>
-      </thead>
+      <thead><tr id="thead-row"></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -109,19 +79,21 @@
   const CSV_URL = "overpaid_clean.csv";
   const money = n => isFinite(n) ? n.toLocaleString(undefined, {style:"currency", currency:"USD", maximumFractionDigits:0}) : "";
   const int = n => isFinite(n) ? n.toLocaleString() : "";
-  const slugify = s => s
-      .toLowerCase()
-      .normalize("NFD").replace(/[̀-ͯ]/g,"")
-      .replace(/[^a-z0-9\s-]/g,"")
-      .trim().replace(/\s+/g,"-");
+  const slug = s => String(s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-z0-9\s-]/g,"").trim().replace(/\s+/g,"-");
+  const playerURL = (name) => "https://hoopshype.com/player/" + slug(name) + "/";
+  const teamURL = (team) => "https://hoopshype.com/team/" + slug(team) + "/";
 
-  const playerURL = (row) => {
-    if (row.player_hh && /^https?:\/\//.test(row.player_hh)) return row.player_hh;
-    return "https://hoopshype.com/player/" + slugify(row.player) + "/";
-  };
-  const teamURL = (team) => "https://hoopshype.com/team/" + slugify(team) + "/";
+  function ratioColor(rv, sal){
+    if (!isFinite(rv) || !isFinite(sal) || sal <= 0) return "";
+    const ratio = rv / sal; // 0..inf
+    const t = Math.max(0, Math.min(1, (ratio - 0.5) / 1.5)); // 0.5->0, 2.0->1
+    const hue = 0 + (120 - 0) * t; // 0=red, 120=green
+    const light = 92 - 30 * Math.min(1, Math.abs(ratio - 1));
+    return `background:hsl(${hue.toFixed(0)},70%,${light.toFixed(0)}%);`;
+  }
 
-  const state = { rows: [], filtered: [], sortKey: "difference", sortDir: "desc" };
+  const state = { rows: [], filtered: [], seasons: [], teams: [], mode: "aggregate", sortKey: "difference", sortDir: "desc" };
+  const el = id => document.getElementById(id);
 
   function parseCSV(text){
     const lines = text.trim().split(/\r?\n/);
@@ -130,158 +102,178 @@
       const cells = line.split(",");
       const obj = {};
       headers.forEach((h,i)=> obj[h.trim()] = cells[i] !== undefined ? cells[i].trim() : "");
-      ["salary","real_value","difference","games","diff_per_game"].forEach(k => {
-        if (obj[k] !== "") obj[k] = +obj[k];
-      });
-      obj.season_start = +(String(obj.season).slice(0,4));
+      ["salary","real_value","difference","games","season_start"].forEach(k => { if (obj[k] !== "") obj[k] = +obj[k]; });
       return obj;
     });
   }
 
   function initControls(rows){
     const seasons = Array.from(new Set(rows.map(r => r.season))).sort((a,b)=>{
-      const A=+(String(a).slice(0,4)), B=+(String(b).slice(0,4));
-      return A-B;
+      const A=+(String(a).slice(0,4)), B=+(String(b).slice(0,4)); return A-B;
     });
-    const fromSel = document.getElementById("fromSeason");
-    const toSel = document.getElementById("toSeason");
+    state.seasons = seasons;
+    const fromSel = el("fromSeason"), toSel = el("toSeason");
     seasons.forEach(s => { fromSel.add(new Option(s, s)); toSel.add(new Option(s, s)); });
     fromSel.value = seasons[0];
     toSel.value = seasons[seasons.length-1];
 
-    const hasTeam = rows.some(r => r.team && r.team.length);
-    const teamSel = document.getElementById("team");
-    if (hasTeam){
-      const teams = Array.from(new Set(rows.map(r => r.team).filter(Boolean))).sort();
-      teams.forEach(t => teamSel.add(new Option(t, t)));
-    } else {
-      teamSel.parentElement.style.display = "none";
-    }
+    const teams = Array.from(new Set(rows.map(r => r.team).filter(Boolean))).sort();
+    const teamSel = el("team");
+    teams.forEach(t => teamSel.add(new Option(t, t)));
+    state.teams = teams;
 
-    document.getElementById("reset").addEventListener("click", () => {
-      document.getElementById("player").value = "";
-      document.getElementById("minGames").value = "0";
-      document.querySelectorAll(".pill").forEach(p=>p.classList.remove("active"));
-      document.querySelector('.pill[data-status=""]').classList.add("active");
-      fromSel.value = seasons[0];
-      toSel.value = seasons[seasons.length-1];
-      if (hasTeam){ teamSel.value = ""; }
+    ["fromSeason","toSeason","team","player","minGames"].forEach(id => {
+      const node = el(id);
+      node.addEventListener("input", applyFilters);
+      node.addEventListener("change", applyFilters);
+    });
+    el("reset").addEventListener("click", () => {
+      el("fromSeason").value = seasons[0];
+      el("toSeason").value = seasons[seasons.length-1];
+      el("team").value = "";
+      el("player").value = "";
+      el("minGames").value = "0";
       applyFilters();
     });
 
-    document.querySelectorAll(".pill").forEach(el => {
-      el.addEventListener("click", () => {
-        document.querySelectorAll(".pill").forEach(p=>p.classList.remove("active"));
-        el.classList.add("active");
-        applyFilters();
-      });
-    });
-
-    document.querySelectorAll("thead th[data-sort]").forEach(th => {
-      th.addEventListener("click", () => {
-        const key = th.dataset.sort;
-        if (state.sortKey === key){
-          state.sortDir = (state.sortDir === "asc" ? "desc" : "asc");
-        } else {
-          state.sortKey = key;
-          state.sortDir = key === "player" || key === "team" || key==="season" ? "asc" : "desc";
-        }
-        render();
-      });
-    });
-
-    document.getElementById("download").addEventListener("click", downloadCurrent);
-    ["fromSeason","toSeason","team","player","minGames"].forEach(id => {
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.addEventListener("input", applyFilters);
-      el.addEventListener("change", applyFilters);
+    el("thead-row").addEventListener("click", (e)=>{
+      const th = e.target.closest("th[data-sort]"); if (!th) return;
+      const key = th.getAttribute("data-sort");
+      if (state.sortKey === key) state.sortDir = (state.sortDir === "asc") ? "desc" : "asc";
+      else { state.sortKey = key; state.sortDir = (key==="player"||key==="team"||key==="season") ? "asc" : "desc"; }
+      render();
     });
   }
 
   function applyFilters(){
-    const from = document.getElementById("fromSeason").value;
-    const to = document.getElementById("toSeason").value;
-    const teamEl = document.getElementById("team");
-    const team = teamEl && teamEl.offsetParent !== null ? teamEl.value : "";
-    const player = document.getElementById("player").value.trim().toLowerCase();
-    const minG = +document.getElementById("minGames").value;
-    const status = document.querySelector(".pill.active").dataset.status;
+    const from = el("fromSeason").value, to = el("toSeason").value;
+    const team = el("team").value;
+    const player = el("player").value.trim().toLowerCase();
+    const minG = +el("minGames").value;
+    const sFrom = +(String(from).slice(0,4)), sTo = +(String(to).slice(0,4));
 
-    const sFrom = +(String(from).slice(0,4));
-    const sTo = +(String(to).slice(0,4));
+    let rows = state.rows.filter(r => r.season_start >= sFrom && r.season_start <= sTo);
+    if (minG) rows = rows.filter(r => (+r.games||0) >= minG);
 
-    state.filtered = state.rows.filter(r => {
-      if (!(r.season_start >= sFrom && r.season_start <= sTo)) return false;
-      if (team && (r.team||"") !== team) return false;
-      if (player && !String(r.player).toLowerCase().includes(player)) return false;
-      if (minG && (!(+r.games >= minG))) return false;
-      if (status && String(r.status).toUpperCase() !== status) return false;
-      return true;
-    });
+    if (player){
+      rows = rows.filter(r => String(r.player).toLowerCase().includes(player));
+      state.mode = "player";
+    } else if (team){
+      rows = rows.filter(r => r.team === team);
+      state.mode = "team";
+    } else {
+      state.mode = "aggregate";
+    }
+    state.filtered = rows;
     render();
   }
 
-  function render(){
-    const key = state.sortKey;
-    const dir = state.sortDir === "asc" ? 1 : -1;
-    const data = [...state.filtered].sort((a,b)=>{
-      const A = a[key], B = b[key];
-      if (A == null && B == null) return 0;
-      if (A == null) return 1;
-      if (B == null) return -1;
-      if (typeof A === "number" && typeof B === "number") return (A-B)*dir;
-      return String(A).localeCompare(String(B)) * dir;
-    });
-
-    const tbody = document.querySelector("#tbl tbody");
-    tbody.innerHTML = "";
-    const fmtRow = r => {
-      const pLink = `<a class="link" href="${playerURL(r)}" target="_blank" rel="noopener">${r.player}</a>`;
-      const tCell = r.team ? `<a class="link" href="${teamURL(r.team)}" target="_blank" rel="noopener">${r.team}</a>` : "";
-      const st = String(r.status||"").toUpperCase();
-      const stClass = st === "U" ? "u" : (st === "O" ? "o" : "");
-      return `<tr>
-        <td class="nowrap">${r.season||""}</td>
-        <td>${pLink}</td>
-        <td>${tCell}</td>
-        <td class="right">${money(+r.salary||NaN)}</td>
-        <td class="right">${money(+r.real_value||NaN)}</td>
-        <td class="right">${money(+r.difference||NaN)}</td>
-        <td class="right">${int(+r.games||NaN)}</td>
-        <td class="status ${stClass}">${st||""}</td>
-      </tr>`;
-    };
-    tbody.innerHTML = data.slice(0, 2000).map(fmtRow).join("");
-
-    const total = data.length;
-    const u = data.filter(r => String(r.status).toUpperCase()==="U").length;
-    const o = data.filter(r => String(r.status).toUpperCase()==="O").length;
-    const sumDiff = data.reduce((acc,r)=> acc + (+r.difference||0), 0);
-    document.getElementById("summary").textContent =
-      `${total.toLocaleString()} rows | Underpaid: ${u.toLocaleString()} | Overpaid: ${o.toLocaleString()} | Net difference: ${money(sumDiff)}`;
+  function setHeaders(){
+    const tr = el("thead-row");
+    if (state.mode === "player"){
+      tr.innerHTML = `
+        <th data-sort="season" class="nowrap">Season</th>
+        <th data-sort="team">Team</th>
+        <th data-sort="salary" class="right">Salary</th>
+        <th data-sort="real_value" class="right">Real&nbsp;Value</th>
+        <th data-sort="difference" class="right">Difference</th>
+        <th data-sort="games" class="right">G</th>
+      `;
+      state.sortKey = "season"; state.sortDir = "asc";
+    } else {
+      tr.innerHTML = `
+        <th data-sort="player">Player</th>
+        ${state.mode==="team" ? "" : `<th data-sort="team">Team</th>`}
+        <th data-sort="salary" class="right">Salary (Total)</th>
+        <th data-sort="real_value" class="right">Real&nbsp;Value (Total)</th>
+        <th data-sort="difference" class="right">Difference (Total)</th>
+        <th data-sort="games" class="right">G (Total)</th>
+      `;
+      state.sortKey = "difference"; state.sortDir = "desc";
+    }
   }
 
-  function downloadCurrent(){
-    const headers = ["season","player","team","salary","real_value","difference","games","status"];
-    const rows = state.filtered.map(r => headers.map(h => r[h] ?? ""));
-    const csv = [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
-    const blob = new Blob([csv], {type:"text/csv;charset=utf-8;"});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "overpaid_view.csv";
-    a.click();
-    URL.revokeObjectURL(url);
+  function render(){
+    setHeaders();
+    const tbody = document.querySelector("#tbl tbody");
+    tbody.innerHTML = "";
+    const from = el("fromSeason").value, to = el("toSeason").value;
+    const team = el("team").value;
+    const playerQuery = el("player").value.trim();
+    const headerNote = (from===to)? from : (from + " to " + to);
+
+    if (state.mode === "player"){
+      const rows = [...state.filtered].sort((a,b)=> (a.season_start - b.season_start) || String(a.season).localeCompare(b.season));
+      let totals = {salary:0, real_value:0, difference:0, games:0};
+      rows.forEach(r => {
+        totals.salary += +r.salary||0; totals.real_value += +r.real_value||0; totals.difference += +r.difference||0; totals.games += +r.games||0;
+        const style = ratioColor(+r.real_value, +r.salary);
+        tbody.insertAdjacentHTML("beforeend", `
+          <tr>
+            <td class="nowrap">${r.season||""}</td>
+            <td>${r.team ? `<a href="${teamURL(r.team)}" target="_blank">${r.team}</a>` : ""}</td>
+            <td class="right">${money(+r.salary||NaN)}</td>
+            <td class="right">${money(+r.real_value||NaN)}</td>
+            <td class="right" style="${style}">${money(+r.difference||NaN)}</td>
+            <td class="right">${int(+r.games||NaN)}</td>
+          </tr>
+        `);
+      });
+      tbody.insertAdjacentHTML("beforeend", `
+        <tr class="totals">
+          <td colspan="2">Totals${playerQuery ? ` for ${playerQuery}` : ""} (${headerNote})</td>
+          <td class="right">${money(totals.salary)}</td>
+          <td class="right">${money(totals.real_value)}</td>
+          <td class="right">${money(totals.difference)}</td>
+          <td class="right">${int(totals.games)}</td>
+        </tr>
+      `);
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} seasons for “${playerQuery}” | Range: ${headerNote}`;
+    } else {
+      // Aggregate by player (and optionally by team if league-wide mode)
+      const map = new Map();
+      for (const r of state.filtered){
+        const key = r.player + "||" + (state.mode==="team" ? "" : (r.team||""));
+        const cur = map.get(key) || {player:r.player, team:(state.mode==="team" ? "" : r.team||""), salary:0, real_value:0, difference:0, games:0};
+        cur.salary += +r.salary||0; cur.real_value += +r.real_value||0; cur.difference += +r.difference||0; cur.games += +r.games||0;
+        map.set(key, cur);
+      }
+      let rows = Array.from(map.values());
+
+      // Sort by chosen key
+      const key = state.sortKey, dir = (state.sortDir==="asc")? 1 : -1;
+      rows.sort((a,b)=>{
+        const A = a[key], B = b[key];
+        if (typeof A === "number" && typeof B === "number") return (A-B)*dir;
+        return String(A).localeCompare(String(B)) * dir;
+      });
+
+      // Render
+      for (const r of rows){
+        const style = ratioColor(+r.real_value, +r.salary);
+        const playerLink = `<a href="${playerURL(r.player)}" target="_blank">${r.player}</a>`;
+        const teamCell = state.mode==="team" ? "" : `<td>${r.team ? `<a href="${teamURL(r.team)}" target="_blank">${r.team}</a>` : ""}</td>`;
+        tbody.insertAdjacentHTML("beforeend", `
+          <tr>
+            <td>${playerLink}</td>
+            ${teamCell}
+            <td class="right">${money(r.salary)}</td>
+            <td class="right">${money(r.real_value)}</td>
+            <td class="right" style="${style}">${money(r.difference)}</td>
+            <td class="right">${int(r.games)}</td>
+          </tr>
+        `);
+      }
+      const scope = state.mode==="team" ? `Team: ${team||"All"}` : "League";
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} players | ${scope} | Range: ${headerNote} | Ranked most underpaid → most overpaid`;
+    }
   }
 
   fetch(CSV_URL).then(r=>r.text()).then(text => {
     const rows = parseCSV(text);
-    if (!("team" in rows[0])){ rows.forEach(r => r.team = ""); }
     state.rows = rows;
-    state.filtered = rows;
     initControls(rows);
-    render();
+    applyFilters();
   }).catch(err => {
     document.getElementById("summary").textContent = "Failed to load data: " + err;
   });
