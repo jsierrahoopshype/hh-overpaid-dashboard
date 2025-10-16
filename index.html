@@ -10,7 +10,7 @@
     body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif}
     .wrap{max-width:1100px;margin:0 auto;padding:16px}
     h1{font-size:22px;margin:0 0 8px}
-    .controls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;align-items:end;margin:12px 0 14px}
+    .controls{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:10px;align-items:end;margin:12px 0 14px}
     .controls label{font-size:12px;color:var(--muted);display:block;margin-bottom:4px}
     select,input{width:100%;padding:8px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--fg)}
     .row{display:flex;justify-content:space-between;gap:12px;align-items:center;margin:6px 0 14px}
@@ -22,10 +22,10 @@
     .right{text-align:right}
     .nowrap{white-space:nowrap}
     .totals{font-weight:700;background:#f3f4f6}
-    @media (max-width:860px){
-      .controls{grid-template-columns:repeat(2,minmax(0,1fr));}
-      .nowrap{white-space:normal}
-    }
+    .btn{appearance:none;border:1px solid var(--line);border-radius:10px;background:#fff;padding:8px 10px;cursor:pointer}
+    @media (max-width:980px){ .controls{grid-template-columns:repeat(2,minmax(0,1fr));} }
+    a.link{color:#0d6efd;text-decoration:none}
+    a.link:hover{text-decoration:underline}
   </style>
 </head>
 <body>
@@ -60,7 +60,11 @@
       </div>
       <div>
         <label>&nbsp;</label>
-        <button id="reset" style="padding:8px 10px;border:1px solid var(--line);border-radius:10px;background:#fff;cursor:pointer">Reset</button>
+        <button id="reset" class="btn">Reset</button>
+      </div>
+      <div>
+        <label>&nbsp;</label>
+        <button id="clear" class="btn">Clear</button>
       </div>
     </div>
 
@@ -85,14 +89,14 @@
 
   function ratioColor(rv, sal){
     if (!isFinite(rv) || !isFinite(sal) || sal <= 0) return "";
-    const ratio = rv / sal; // 0..inf
-    const t = Math.max(0, Math.min(1, (ratio - 0.5) / 1.5)); // 0.5->0, 2.0->1
-    const hue = 0 + (120 - 0) * t; // 0=red, 120=green
+    const ratio = rv / sal;
+    const t = Math.max(0, Math.min(1, (ratio - 0.5) / 1.5));
+    const hue = 0 + (120 - 0) * t;
     const light = 92 - 30 * Math.min(1, Math.abs(ratio - 1));
     return `background:hsl(${hue.toFixed(0)},70%,${light.toFixed(0)}%);`;
   }
 
-  const state = { rows: [], filtered: [], seasons: [], teams: [], mode: "aggregate", sortKey: "difference", sortDir: "desc" };
+  const state = { rows: [], filtered: [], seasons: [], teams: [], mode: "season", sortKey: "difference", sortDir: "desc", season_focus: "2024-25" };
   const el = id => document.getElementById(id);
 
   function parseCSV(text){
@@ -107,17 +111,25 @@
     });
   }
 
+  function splitTeams(cell){
+    if (!cell) return [];
+    return cell.split(",").map(s => s.trim()).filter(Boolean);
+  }
+
   function initControls(rows){
-    const seasons = Array.from(new Set(rows.map(r => r.season))).sort((a,b)=>{
-      const A=+(String(a).slice(0,4)), B=+(String(b).slice(0,4)); return A-B;
-    });
+    const seasons = Array.from(new Set(rows.map(r => r.season)))
+      .filter(s => s && s.toLowerCase() !== "year" && /^\d{4}-\d{2}$/.test(s))
+      .sort((a,b)=> (+(a.slice(0,4)) - +(b.slice(0,4))));
     state.seasons = seasons;
     const fromSel = el("fromSeason"), toSel = el("toSeason");
     seasons.forEach(s => { fromSel.add(new Option(s, s)); toSel.add(new Option(s, s)); });
-    fromSel.value = seasons[0];
-    toSel.value = seasons[seasons.length-1];
 
-    const teams = Array.from(new Set(rows.map(r => r.team).filter(Boolean))).sort();
+    const def = seasons.includes("2024-25") ? "2024-25" : seasons[seasons.length-1];
+    fromSel.value = def; toSel.value = def;
+
+    const teamSet = new Set();
+    rows.forEach(r => splitTeams(r.team).forEach(t => teamSet.add(t)));
+    const teams = Array.from(teamSet).sort();
     const teamSel = el("team");
     teams.forEach(t => teamSel.add(new Option(t, t)));
     state.teams = teams;
@@ -128,11 +140,21 @@
       node.addEventListener("change", applyFilters);
     });
     el("reset").addEventListener("click", () => {
-      el("fromSeason").value = seasons[0];
-      el("toSeason").value = seasons[seasons.length-1];
+      fromSel.value = seasons[0];
+      toSel.value = seasons[seasons.length-1];
       el("team").value = "";
       el("player").value = "";
       el("minGames").value = "0";
+      state.mode = "aggregate"; state.season_focus = "";
+      applyFilters();
+    });
+    el("clear").addEventListener("click", () => {
+      fromSel.value = seasons[0];
+      toSel.value = seasons[seasons.length-1];
+      el("team").value = "";
+      el("player").value = "";
+      el("minGames").value = "0";
+      state.mode = "aggregate"; state.season_focus = "";
       applyFilters();
     });
 
@@ -159,10 +181,14 @@
       rows = rows.filter(r => String(r.player).toLowerCase().includes(player));
       state.mode = "player";
     } else if (team){
-      rows = rows.filter(r => r.team === team);
+      rows = rows.filter(r => splitTeams(r.team).includes(team));
       state.mode = "team";
+    } else if (from === to && from){
+      state.mode = "season";
+      state.season_focus = from;
     } else {
       state.mode = "aggregate";
+      state.season_focus = "";
     }
     state.filtered = rows;
     render();
@@ -173,106 +199,228 @@
     if (state.mode === "player"){
       tr.innerHTML = `
         <th data-sort="season" class="nowrap">Season</th>
-        <th data-sort="team">Team</th>
+        <th data-sort="team">Teams</th>
         <th data-sort="salary" class="right">Salary</th>
         <th data-sort="real_value" class="right">Real&nbsp;Value</th>
         <th data-sort="difference" class="right">Difference</th>
-        <th data-sort="games" class="right">G</th>
-      `;
+        <th data-sort="games" class="right">G</th>`;
       state.sortKey = "season"; state.sortDir = "asc";
-    } else {
+    } else if (state.mode === "team" && el("fromSeason").value === el("toSeason").value){
       tr.innerHTML = `
         <th data-sort="player">Player</th>
-        ${state.mode==="team" ? "" : `<th data-sort="team">Team</th>`}
+        <th data-sort="salary" class="right">Salary</th>
+        <th data-sort="real_value" class="right">Real&nbsp;Value</th>
+        <th data-sort="difference" class="right">Difference</th>
+        <th data-sort="games" class="right">G</th>`;
+      state.sortKey = "difference"; state.sortDir = "desc";
+    } else if (state.mode === "team"){
+      tr.innerHTML = `
+        <th data-sort="season">Season</th>
         <th data-sort="salary" class="right">Salary (Total)</th>
         <th data-sort="real_value" class="right">Real&nbsp;Value (Total)</th>
         <th data-sort="difference" class="right">Difference (Total)</th>
-        <th data-sort="games" class="right">G (Total)</th>
-      `;
+        <th data-sort="games" class="right">G (Total)</th>`;
+      state.sortKey = "season"; state.sortDir = "asc";
+    } else if (state.mode === "season"){
+      tr.innerHTML = `
+        <th data-sort="player">Player</th>
+        <th data-sort="team">Teams</th>
+        <th data-sort="salary" class="right">Salary</th>
+        <th data-sort="real_value" class="right">Real&nbsp;Value</th>
+        <th data-sort="difference" class="right">Difference</th>
+        <th data-sort="games" class="right">G</th>`;
+      state.sortKey = "difference"; state.sortDir = "desc";
+    } else {
+      tr.innerHTML = `
+        <th data-sort="player">Player</th>
+        <th data-sort="salary" class="right">Salary (Total)</th>
+        <th data-sort="real_value" class="right">Real&nbsp;Value (Total)</th>
+        <th data-sort="difference" class="right">Difference (Total)</th>
+        <th data-sort="games" class="right">G (Total)</th>`;
       state.sortKey = "difference"; state.sortDir = "desc";
     }
+  }
+
+  function computeAllTimeRanks(){
+    const totals = new Map();
+    for (const r of state.rows){
+      const key = r.player;
+      const cur = totals.get(key) || {player:r.player, difference:0};
+      cur.difference += (+r.difference||0);
+      totals.set(key, cur);
+    }
+    const arr = Array.from(totals.values()).sort((a,b)=> b.difference - a.difference);
+    const rank = new Map();
+    arr.forEach((it,idx)=> rank.set(it.player, idx+1));
+    return {rank, totalPlayers: arr.length};
   }
 
   function render(){
     setHeaders();
     const tbody = document.querySelector("#tbl tbody");
     tbody.innerHTML = "";
+
     const from = el("fromSeason").value, to = el("toSeason").value;
-    const team = el("team").value;
+    const tm = el("team").value;
     const playerQuery = el("player").value.trim();
     const headerNote = (from===to)? from : (from + " to " + to);
 
     if (state.mode === "player"){
       const rows = [...state.filtered].sort((a,b)=> (a.season_start - b.season_start) || String(a.season).localeCompare(b.season));
       let totals = {salary:0, real_value:0, difference:0, games:0};
-      rows.forEach(r => {
+      for (const r of rows){
         totals.salary += +r.salary||0; totals.real_value += +r.real_value||0; totals.difference += +r.difference||0; totals.games += +r.games||0;
         const style = ratioColor(+r.real_value, +r.salary);
+        const teams = (r.team||"").split(",").map(s=>s.trim()).filter(Boolean).map(t=>`<a class="link" href="#" data-team="${t}">${t}</a>`).join(", ");
+        const seasonBtn = `<a href="#" class="link" data-jump-season="${r.season}">${r.season}</a>`;
         tbody.insertAdjacentHTML("beforeend", `
           <tr>
-            <td class="nowrap">${r.season||""}</td>
-            <td>${r.team ? `<a href="${teamURL(r.team)}" target="_blank">${r.team}</a>` : ""}</td>
+            <td class="nowrap">${seasonBtn}</td>
+            <td>${teams}</td>
             <td class="right">${money(+r.salary||NaN)}</td>
             <td class="right">${money(+r.real_value||NaN)}</td>
             <td class="right" style="${style}">${money(+r.difference||NaN)}</td>
             <td class="right">${int(+r.games||NaN)}</td>
-          </tr>
-        `);
-      });
+          </tr>`);
+      }
+      const {rank, totalPlayers} = computeAllTimeRanks();
+      const playerName = rows.length ? rows[0].player : playerQuery;
+      const rnk = rank.get(playerName) || "";
+      tbody.insertAdjacentHTML("beforeend", `<tr class="totals"><td colspan="6">All-time rank for <strong>${playerName}</strong>: #${rnk} of ${totalPlayers} players (1990-91 to 2024-25)</td></tr>`);
       tbody.insertAdjacentHTML("beforeend", `
         <tr class="totals">
-          <td colspan="2">Totals${playerQuery ? ` for ${playerQuery}` : ""} (${headerNote})</td>
+          <td colspan="2">Totals (${headerNote})</td>
           <td class="right">${money(totals.salary)}</td>
           <td class="right">${money(totals.real_value)}</td>
           <td class="right">${money(totals.difference)}</td>
           <td class="right">${int(totals.games)}</td>
-        </tr>
-      `);
-      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} seasons for “${playerQuery}” | Range: ${headerNote}`;
-    } else {
-      // Aggregate by player (and optionally by team if league-wide mode)
-      const map = new Map();
-      for (const r of state.filtered){
-        const key = r.player + "||" + (state.mode==="team" ? "" : (r.team||""));
-        const cur = map.get(key) || {player:r.player, team:(state.mode==="team" ? "" : r.team||""), salary:0, real_value:0, difference:0, games:0};
-        cur.salary += +r.salary||0; cur.real_value += +r.real_value||0; cur.difference += +r.difference||0; cur.games += +r.games||0;
-        map.set(key, cur);
-      }
-      let rows = Array.from(map.values());
+        </tr>`);
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} seasons for “${playerName}” | Range: ${headerNote}`;
 
-      // Sort by chosen key
-      const key = state.sortKey, dir = (state.sortDir==="asc")? 1 : -1;
-      rows.sort((a,b)=>{
-        const A = a[key], B = b[key];
-        if (typeof A === "number" && typeof B === "number") return (A-B)*dir;
-        return String(A).localeCompare(String(B)) * dir;
-      });
-
-      // Render
+    } else if (state.mode === "team" && from === to){
+      const rows = [...state.filtered].sort((a,b)=> (+b.difference||0) - (+a.difference||0));
       for (const r of rows){
         const style = ratioColor(+r.real_value, +r.salary);
-        const playerLink = `<a href="${playerURL(r.player)}" target="_blank">${r.player}</a>`;
-        const teamCell = state.mode==="team" ? "" : `<td>${r.team ? `<a href="${teamURL(r.team)}" target="_blank">${r.team}</a>` : ""}</td>`;
+        const pLink = `<a class="link" href="#" data-player="${r.player}">${r.player}</a>`;
         tbody.insertAdjacentHTML("beforeend", `
           <tr>
-            <td>${playerLink}</td>
-            ${teamCell}
+            <td>${pLink}</td>
+            <td class="right">${money(+r.salary||NaN)}</td>
+            <td class="right">${money(+r.real_value||NaN)}</td>
+            <td class="right" style="${style}">${money(+r.difference||NaN)}</td>
+            <td class="right">${int(+r.games||NaN)}</td>
+          </tr>`);
+      }
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} players | Team: ${tm} | Season: ${from} | Ranked most underpaid → most overpaid`;
+
+    } else if (state.mode === "team"){
+      const bySeason = new Map();
+      for (const r of state.filtered){
+        const key = r.season;
+        const cur = bySeason.get(key) || {season:r.season, salary:0, real_value:0, difference:0, games:0};
+        cur.salary += +r.salary||0; cur.real_value += +r.real_value||0; cur.difference += +r.difference||0; cur.games += +r.games||0;
+        bySeason.set(key, cur);
+      }
+      const rows = Array.from(bySeason.values()).sort((a,b)=> (+(a.season.slice(0,4)) - +(b.season.slice(0,4))));
+      for (const r of rows){
+        const style = ratioColor(+r.real_value, +r.salary);
+        const seasonBtn = `<a href="#" class="link" data-jump-season="${r.season}">${r.season}</a>`;
+        tbody.insertAdjacentHTML("beforeend", `
+          <tr>
+            <td class="nowrap">${seasonBtn}</td>
             <td class="right">${money(r.salary)}</td>
             <td class="right">${money(r.real_value)}</td>
             <td class="right" style="${style}">${money(r.difference)}</td>
             <td class="right">${int(r.games)}</td>
-          </tr>
-        `);
+          </tr>`);
       }
-      const scope = state.mode==="team" ? `Team: ${team||"All"}` : "League";
-      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} players | ${scope} | Range: ${headerNote} | Ranked most underpaid → most overpaid`;
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} seasons | Team: ${tm} | Range: ${headerNote}`;
+
+    } else if (state.mode === "season"){
+      const rows = state.rows.filter(r => r.season === state.season_focus);
+      rows.sort((a,b)=> (+b.difference||0) - (+a.difference||0));
+      for (const r of rows){
+        const style = ratioColor(+r.real_value, +r.salary);
+        const pLink = `<a class="link" href="#" data-player="${r.player}">${r.player}</a>`;
+        const teams = (r.team||"").split(",").map(s=>s.trim()).filter(Boolean).map(t=>`<a class="link" href="#" data-team="${t}">${t}</a>`).join(", ");
+        tbody.insertAdjacentHTML("beforeend", `
+          <tr>
+            <td>${pLink}</td>
+            <td>${teams}</td>
+            <td class="right">${money(+r.salary||NaN)}</td>
+            <td class="right">${money(+r.real_value||NaN)}</td>
+            <td class="right" style="${style}">${money(+r.difference||NaN)}</td>
+            <td class="right">${int(+r.games||NaN)}</td>
+          </tr>`);
+      }
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} players | Season: ${state.season_focus} | Ranked most underpaid → most overpaid`;
+
+    } else {
+      const map = new Map();
+      for (const r of state.filtered){
+        const key = r.player;
+        const cur = map.get(key) || {player:r.player, salary:0, real_value:0, difference:0, games:0};
+        cur.salary += +r.salary||0; cur.real_value += +r.real_value||0; cur.difference += +r.difference||0; cur.games += +r.games||0;
+        map.set(key, cur);
+      }
+      let rows = Array.from(map.values());
+      rows.sort((a,b)=> (+b.difference||0) - (+a.difference||0));
+      for (const r of rows){
+        const style = ratioColor(+r.real_value, +r.salary);
+        const pLink = `<a class="link" href="#" data-player="${r.player}">${r.player}</a>`;
+        tbody.insertAdjacentHTML("beforeend", `
+          <tr>
+            <td>${pLink}</td>
+            <td class="right">${money(r.salary)}</td>
+            <td class="right">${money(r.real_value)}</td>
+            <td class="right" style="${style}">${money(r.difference)}</td>
+            <td class="right">${int(r.games)}</td>
+          </tr>`);
+      }
+      document.getElementById("summary").textContent = `${rows.length.toLocaleString()} players | League | Range: ${headerNote} | Ranked most underpaid → most overpaid`;
     }
+
+    // Click wiring
+    document.querySelectorAll('[data-player]').forEach(a => {
+      a.addEventListener('click', (e)=>{
+        e.preventDefault();
+        el('player').value = a.getAttribute('data-player');
+        el('team').value = "";
+        state.mode = "player";
+        applyFilters();
+      });
+    });
+    document.querySelectorAll('[data-team]').forEach(a => {
+      a.addEventListener('click', (e)=>{
+        e.preventDefault();
+        el('team').value = a.getAttribute('data-team');
+        el('player').value = "";
+        applyFilters();
+      });
+    });
+    document.querySelectorAll('[data-jump-season]').forEach(a => {
+      a.addEventListener('click', (e)=>{
+        e.preventDefault();
+        const sea = a.getAttribute('data-jump-season');
+        el('fromSeason').value = sea;
+        el('toSeason').value = sea;
+        state.mode = "season";
+        state.season_focus = sea;
+        applyFilters();
+      });
+    });
   }
 
   fetch(CSV_URL).then(r=>r.text()).then(text => {
     const rows = parseCSV(text);
     state.rows = rows;
     initControls(rows);
+    if (state.seasons.includes("2024-25")){
+      el("fromSeason").value = "2024-25";
+      el("toSeason").value = "2024-25";
+      state.mode = "season";
+      state.season_focus = "2024-25";
+    }
     applyFilters();
   }).catch(err => {
     document.getElementById("summary").textContent = "Failed to load data: " + err;
